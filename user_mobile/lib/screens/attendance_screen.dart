@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import '../providers/attendance_provider.dart';
+import 'camera_attendance_screen.dart';
+import '../services/location_service.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final bool showHistory;
@@ -13,62 +15,120 @@ class AttendanceScreen extends StatefulWidget {
   State<AttendanceScreen> createState() => _AttendanceScreenState();
 }
 
-class _AttendanceScreenState extends State<AttendanceScreen> {
+class _AttendanceScreenState extends State<AttendanceScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   @override
   void initState() {
     super.initState();
     initializeDateFormatting('id_ID', null);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.showHistory ? 1 : 0,
+    );
+    _tabController.addListener(_onTabChanged);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<AttendanceProvider>(context, listen: false);
       provider.loadTodayStatus();
-      if (widget.showHistory) {
+      if (widget.showHistory || _tabController.index == 1) {
         provider.loadHistory();
       }
     });
   }
 
-  Future<void> _handleCheckIn() async {
-    final provider = Provider.of<AttendanceProvider>(context, listen: false);
-
-    final success = await provider.checkIn(location: 'Mobile App');
-
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Absen masuk berhasil!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(provider.errorMessage ?? 'Absen masuk gagal'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+  void _onTabChanged() {
+    if (_tabController.index == 1) {
+      final provider = Provider.of<AttendanceProvider>(context, listen: false);
+      provider.loadHistory();
     }
   }
 
-  Future<void> _handleCheckOut() async {
-    final provider = Provider.of<AttendanceProvider>(context, listen: false);
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
 
-    final success = await provider.checkOut();
+  Future<void> _handleCheckIn() async {
+    final locationService = LocationService();
 
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Absen keluar berhasil!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
+    // 1. Check if GPS is enabled
+    bool isGPSEnabled = await locationService.isLocationServiceEnabled();
+    if (!isGPSEnabled) {
+      if (!mounted) return;
+      _showGPSDisabledDialog();
+      return;
+    }
+
+    // 2. Check location permission
+    bool hasPermission = await locationService.checkLocationPermission();
+    if (!hasPermission) {
+      hasPermission = await locationService.requestLocationPermission();
+      if (!hasPermission) {
+        if (!mounted) return;
+        _showPermissionDeniedDialog();
+        return;
+      }
+    }
+
+    // 3. Validate location (distance check)
+    final result = await locationService.validateLocation();
+    if (!mounted) return;
+
+    if (!result['success']) {
+      _showLocationErrorDialog(result['message'], result['distance']);
+      return;
+    }
+
+    // 4. All checks passed, open camera
+    final cameraResult = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CameraAttendanceScreen(isCheckOut: false),
+      ),
+    );
+
+    print('DEBUG: Camera result = $cameraResult'); // Debug
+
+    if (cameraResult == true && mounted) {
+      print('DEBUG: Camera result is true, reloading status'); // Debug
+      // Reload today's status first
+      final provider = Provider.of<AttendanceProvider>(context, listen: false);
+      await provider.loadTodayStatus();
+
+      // Force rebuild UI
+      if (mounted) {
+        setState(() {});
+      }
+
+      // Show success message
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.errorMessage ?? 'Absen keluar gagal'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Absen masuk berhasil! Anda sudah absen hari ini.',
+                    style: TextStyle(fontSize: 15),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
@@ -77,31 +137,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      initialIndex: widget.showHistory ? 1 : 0,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Absensi'),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          flexibleSpace: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Colors.blue.shade600, Colors.blue.shade400],
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Absensi'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.blue.shade600, Colors.blue.shade400],
             ),
           ),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Hari Ini', icon: Icon(Icons.today)),
-              Tab(text: 'Riwayat', icon: Icon(Icons.history)),
-            ],
-          ),
         ),
-        body: TabBarView(children: [_buildCheckInOutTab(), _buildHistoryTab()]),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Hari Ini', icon: Icon(Icons.today)),
+            Tab(text: 'Riwayat', icon: Icon(Icons.history)),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [_buildCheckInOutTab(), _buildHistoryTab()],
       ),
     );
   }
@@ -151,10 +211,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Tombol Masuk/Keluar
+                // Tombol Masuk - Always show for testing
                 if (provider.isLoading)
                   const Center(child: CircularProgressIndicator())
-                else if (!provider.hasCheckedInToday)
+                else
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -171,143 +231,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                    ),
-                  )
-                else if (!provider.hasCheckedOutToday)
-                  Column(
-                    children: [
-                      // Status Card
-                      Card(
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Status:'),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _getStatusColor(
-                                        provider.todayAttendance!.status,
-                                      ).withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      _translateStatus(
-                                        provider.todayAttendance!.status,
-                                      ),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: _getStatusColor(
-                                          provider.todayAttendance!.status,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Divider(height: 24),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Waktu Masuk:'),
-                                  Text(
-                                    DateFormat('HH:mm:ss').format(
-                                      provider.todayAttendance!.checkInTime,
-                                    ),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _handleCheckOut,
-                          icon: const Icon(Icons.logout, size: 32),
-                          label: const Text(
-                            'Absen Keluar',
-                            style: TextStyle(fontSize: 20),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.all(24),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            size: 64,
-                            color: Colors.green,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Anda telah menyelesaikan absensi hari ini!',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Masuk:'),
-                              Text(
-                                DateFormat(
-                                  'HH:mm:ss',
-                                ).format(provider.todayAttendance!.checkInTime),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Keluar:'),
-                              Text(
-                                DateFormat('HH:mm:ss').format(
-                                  provider.todayAttendance!.checkOutTime!,
-                                ),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
                       ),
                     ),
                   ),
@@ -342,12 +265,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundColor: _getStatusColor(attendance.status),
-                    child: Icon(
-                      attendance.checkOutTime != null
-                          ? Icons.check_circle
-                          : Icons.login,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.login, color: Colors.white),
                   ),
                   title: Text(
                     DateFormat(
@@ -362,10 +280,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       Text(
                         'Masuk: ${DateFormat('HH:mm:ss').format(attendance.checkInTime)}',
                       ),
-                      if (attendance.checkOutTime != null)
-                        Text(
-                          'Keluar: ${DateFormat('HH:mm:ss').format(attendance.checkOutTime!)}',
-                        ),
                     ],
                   ),
                   trailing: Container(
@@ -410,16 +324,145 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  String _translateStatus(String status) {
-    switch (status.toLowerCase()) {
-      case 'present':
-        return 'HADIR';
-      case 'late':
-        return 'TERLAMBAT';
-      case 'absent':
-        return 'ALPHA';
-      default:
-        return status.toUpperCase();
-    }
+  void _showGPSDisabledDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.location_off, color: Colors.red, size: 32),
+            SizedBox(width: 12),
+            Text('GPS Tidak Aktif'),
+          ],
+        ),
+        content: const Text(
+          'Silakan aktifkan GPS untuk melanjutkan absensi.\n\nTekan tombol di bawah untuk membuka pengaturan GPS.',
+          style: TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              final locationService = LocationService();
+              await locationService.openLocationSettings();
+              // Wait 2 seconds then retry
+              await Future.delayed(const Duration(seconds: 2));
+              _handleCheckIn();
+            },
+            icon: const Icon(Icons.settings),
+            label: const Text('Aktifkan GPS'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange, size: 32),
+            SizedBox(width: 12),
+            Text('Izin Lokasi Ditolak'),
+          ],
+        ),
+        content: const Text(
+          'Aplikasi membutuhkan izin lokasi untuk fitur absensi.\n\nSilakan berikan izin di pengaturan aplikasi.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationErrorDialog(String message, double? distance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 32),
+            SizedBox(width: 12),
+            Text('Lokasi Tidak Valid'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (distance != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          color: Colors.red.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            distance >= 1000
+                                ? 'Jarak: ${(distance / 1000).toStringAsFixed(2)} km'
+                                : 'Jarak: ${distance.toStringAsFixed(0)} meter',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Radius maksimal: 1.5 km',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _handleCheckIn(); // Retry
+            },
+            child: const Text('Coba Lagi'),
+          ),
+        ],
+      ),
+    );
   }
 }

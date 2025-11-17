@@ -15,6 +15,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [UserController::class, 'show']);
+    Route::post('/user/update-password', [UserController::class, 'updatePassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/{product}', [ProductController::class, 'show']);
@@ -22,10 +23,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Attendance routes
     Route::get('/attendances', [AttendanceController::class, 'index']);
     Route::post('/attendances/check-in', [AttendanceController::class, 'checkIn']);
-    Route::post('/attendances/check-out', [AttendanceController::class, 'checkOut']);
     Route::get('/attendances/today', [AttendanceController::class, 'todayStatus']);
     Route::get('/attendances/history', [AttendanceController::class, 'history']);
     Route::get('/attendances/export', [AttendanceController::class, 'exportUser']);
+    Route::delete('/attendances/{id}', [AttendanceController::class, 'destroy']); // Admin: hapus absensi
 
     // Task routes
     Route::get('/tasks', [TaskController::class, 'index']); // Admin: semua tugas

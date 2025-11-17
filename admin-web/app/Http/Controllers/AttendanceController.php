@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Attendance;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class AttendanceController extends Controller
 {
@@ -176,5 +177,31 @@ class AttendanceController extends Controller
         $filters = $request->only(['date', 'status']);
 
         return view('attendances.print', compact('attendances', 'filters'));
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(string $id)
+    {
+        try {
+            $attendance = Attendance::findOrFail($id);
+            
+            // Delete photos if exist
+            if ($attendance->photo_check_in) {
+                Storage::disk('public')->delete($attendance->photo_check_in);
+            }
+            if ($attendance->photo_check_out) {
+                Storage::disk('public')->delete($attendance->photo_check_out);
+            }
+            
+            $attendance->delete();
+
+            return redirect()->route('attendances.index')
+                ->with('success', 'Data absensi berhasil dihapus!');
+        } catch (\Exception $e) {
+            return redirect()->route('attendances.index')
+                ->with('error', 'Gagal menghapus data: ' . $e->getMessage());
+        }
     }
 }

@@ -10,6 +10,9 @@ class AttendanceService {
   Future<Map<String, dynamic>> checkIn({
     String? location,
     String? notes,
+    required String photoBase64,
+    required double latitude,
+    required double longitude,
   }) async {
     return await _apiService.post(
       '/attendances/check-in',
@@ -17,12 +20,11 @@ class AttendanceService {
       body: {
         if (location != null) 'location': location,
         if (notes != null) 'notes': notes,
+        'photo': photoBase64,
+        'latitude': latitude.toString(),
+        'longitude': longitude.toString(),
       },
     );
-  }
-
-  Future<Map<String, dynamic>> checkOut() async {
-    return await _apiService.post('/attendances/check-out', requiresAuth: true);
   }
 
   Future<Attendance?> getTodayStatus() async {
@@ -41,17 +43,34 @@ class AttendanceService {
   }
 
   Future<List<Attendance>> getHistory({int page = 1}) async {
-    final response = await _apiService.get(
-      '/attendances?page=$page',
-      requiresAuth: true,
-    );
+    try {
+      final response = await _apiService.get(
+        '/attendances?page=$page',
+        requiresAuth: true,
+      );
 
-    if (response['success'] == true && response['data'] != null) {
-      final List<dynamic> data = response['data']['data'] ?? [];
-      return data.map((json) => Attendance.fromJson(json)).toList();
+      // Debug: History Response
+      // print('History Response: $response');
+
+      if (response['success'] == true && response['data'] != null) {
+        // Handle pagination response
+        final data = response['data'];
+        if (data is Map && data.containsKey('data')) {
+          final List<dynamic> items = data['data'] ?? [];
+          return items.map((json) => Attendance.fromJson(json)).toList();
+        }
+        // Handle direct array response
+        else if (data is List) {
+          return data.map((json) => Attendance.fromJson(json)).toList();
+        }
+      }
+
+      return [];
+    } catch (e) {
+      // Debug: Error loading history
+      // print('Error loading history: $e');
+      return [];
     }
-
-    return [];
   }
 
   Future<List<Attendance>> getHistoryFiltered({

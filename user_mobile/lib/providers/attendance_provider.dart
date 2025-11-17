@@ -16,15 +16,17 @@ class AttendanceProvider with ChangeNotifier {
   List<Attendance> get historyList => _historyList;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get hasCheckedInToday => _todayAttendance != null;
-  bool get hasCheckedOutToday => _todayAttendance?.checkOutTime != null;
+
+  // TESTING MODE: Always return false
+  bool get hasCheckedInToday => false;
 
   Future<void> loadTodayStatus() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      _todayAttendance = await _attendanceService.getTodayStatus();
+      // TESTING: Set null to always show button
+      _todayAttendance = null;
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();
@@ -34,7 +36,13 @@ class AttendanceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> checkIn({String? location, String? notes}) async {
+  Future<bool> checkIn({
+    String? location,
+    String? notes,
+    required String photoBase64,
+    required double latitude,
+    required double longitude,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -43,34 +51,10 @@ class AttendanceProvider with ChangeNotifier {
       final response = await _attendanceService.checkIn(
         location: location,
         notes: notes,
+        photoBase64: photoBase64,
+        latitude: latitude,
+        longitude: longitude,
       );
-
-      if (response['success'] == true) {
-        _todayAttendance = Attendance.fromJson(response['data']);
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _errorMessage = response['message'];
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _errorMessage = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<bool> checkOut() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final response = await _attendanceService.checkOut();
 
       if (response['success'] == true) {
         _todayAttendance = Attendance.fromJson(response['data']);

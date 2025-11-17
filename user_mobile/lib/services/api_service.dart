@@ -73,6 +73,25 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> put(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    bool requiresAuth = false,
+  }) async {
+    try {
+      final headers = await getHeaders(requiresAuth: requiresAuth);
+      final response = await http.put(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: headers,
+        body: body != null ? jsonEncode(body) : null,
+      );
+
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
   Map<String, dynamic> _handleResponse(http.Response response) {
     try {
       final Map<String, dynamic> data = jsonDecode(response.body);

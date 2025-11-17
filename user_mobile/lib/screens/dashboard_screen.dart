@@ -261,18 +261,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   ),
                                   Colors.green,
                                 ),
-                                if (attendanceProvider.hasCheckedOutToday) ...[
-                                  const SizedBox(height: 8),
-                                  _buildStatusRow(
-                                    'Keluar',
-                                    _formatTime(
-                                      attendanceProvider
-                                          .todayAttendance!
-                                          .checkOutTime!,
-                                    ),
-                                    Colors.red,
-                                  ),
-                                ],
                               ],
                             )
                           else

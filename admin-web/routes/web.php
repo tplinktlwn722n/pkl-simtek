@@ -18,7 +18,7 @@ Route::middleware([
     })->name('dashboard');
 
     // Attendance management routes
-    Route::resource('attendances', AttendanceController::class)->only(['index', 'show']);
+    Route::resource('attendances', AttendanceController::class)->only(['index', 'show', 'destroy']);
     Route::get('/attendances-export', [AttendanceController::class, 'export'])->name('attendances.export');
     Route::post('/attendances-import', [AttendanceController::class, 'import'])->name('attendances.import');
     Route::get('/attendances-print', [AttendanceController::class, 'print'])->name('attendances.print');

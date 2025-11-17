@@ -253,9 +253,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 Expanded(
                   child: _buildTimeInfo(
                     'Keluar',
-                    attendance.checkOutTime != null
-                        ? DateFormat('HH:mm').format(attendance.checkOutTime!)
-                        : '-',
+                    '-',
                     Icons.logout,
                     Colors.red,
                   ),

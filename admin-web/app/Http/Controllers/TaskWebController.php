@@ -50,4 +50,13 @@ class TaskWebController extends Controller
         $task = Task::with(['admin', 'assignedUser'])->findOrFail($id);
         return view('tugas.show', compact('task'));
     }
+
+    public function destroy($id)
+    {
+        $task = Task::findOrFail($id);
+        $task->delete();
+
+        return redirect()->route('tasks.index')
+            ->with('success', 'Tugas berhasil dihapus');
+    }
 }
